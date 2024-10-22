@@ -1,9 +1,27 @@
-.child1_svg {
-  margin: 30px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.8);
+* {
+  margin: 0;
+  box-sizing: border-box; /* This will ensure padding and borders are included in width */
 }
 
-.child2_svg {
-  margin: 30px;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.8);
+.parent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: start;
+  row-gap: 50px;
+  padding: 20px;
+}
+
+.child1 {
+  border: 1px solid rgb(255, 255, 255);
+}
+
+.child2 {
+  background-color: rgb(228, 228, 228);
+}
+
+.svg_parent {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
 }

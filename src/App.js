@@ -1,6 +1,6 @@
 import React, { Component } from "react";
-import FileUpload from "./FileUpload";
-import Comp1 from "./Comp1";
+import UploadJSON from "./UploadJSON.js";
+import Comp1 from "./Comp1.js";
 import "./App.css";
 
 class App extends Component {
@@ -11,19 +11,24 @@ class App extends Component {
     };
   }
 
-  componentDidUpdate = () => {
-    console.log(this.state.data);
+  componentDidMount = () => {
+    //console.log(tweets);
   };
 
-  set_data = (csv_data) => {
-    this.setState({ data: csv_data });
+  componentDidUpdate = () => {
+    //console.log("App.js update triggered");
+    //console.log(this.state.data);
+  };
+
+  set_data = (json_data) => {
+    this.setState({ data: json_data });
   };
 
   render() {
     return (
       <div className="body">
-        <FileUpload set_data={this.set_data}></FileUpload>
-        <Comp1 csv_data={this.state.data}></Comp1>
+        <UploadJSON set_data={this.set_data}></UploadJSON>
+        <Comp1 json_data={this.state.data}></Comp1>
       </div>
     );
   }

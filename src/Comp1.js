@@ -1,197 +1,319 @@
 import React, { Component } from "react";
 import * as d3 from "d3";
+import "./App.css";
 
 class Comp1 extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      streamData: this.props.csv_data || null,
+      data: [],
+      filteredData: {
+        month1: [],
+        month2: [],
+        month3: [],
+      },
+      circleFill: "Sentiment",
+      tweets: [],
     };
   }
 
-  componentDidMount() {
-    const csv = this.props.csv_data;
-
-    if (!csv || csv.length === 0) {
-      console.log("No Data");
-    } else {
-      this.createStream();
-      console.log("Stream Activated");
-    }
-  }
-
   componentDidUpdate(prevProps) {
-    if (prevProps.csv_data !== this.props.csv_data) {
-      console.log("CSV data updated");
-      this.setState({ streamData: this.props.csv_data }, () => {
-        this.createStream();
-      });
+    if (prevProps.json_data !== this.props.json_data) {
+      console.log("Comp1 update triggered");
+      this.filterData();
     }
   }
 
-  createStream() {
-    const { streamData } = this.state;
+  filterData = () => {
+    const { json_data } = this.props;
+    const sliceData = json_data.slice(0, 299);
 
-    const tooltip = d3.select("#tooltip");
+    let filteredData = {
+      month1: [],
+      month2: [],
+      month3: [],
+    };
 
-    if (!streamData || streamData.length === 0) return;
+    filteredData.month1 = sliceData.filter((d) => d.Month === "March");
+    filteredData.month2 = sliceData.filter((d) => d.Month === "April");
+    filteredData.month3 = sliceData.filter((d) => d.Month === "May");
 
-    const data = streamData;
-    data.forEach((d) => {
-      if (!(d.Date instanceof Date)) {
-        d.Date = new Date(d.Date);
-      }
+    this.setState({ filteredData }, this.createLayout);
+  };
+
+  createLayout = () => {
+    d3.select("#layout").selectAll("*").remove();
+
+    const width = 1400;
+    const height = 600;
+    const leftMargin = 90;
+
+    const svg = d3
+      .select("#layout")
+      .selectAll("svg")
+      .data([null])
+      .join("svg")
+      .attr("width", width)
+      .attr("height", height)
+      .style("background-color", "white");
+
+    const { month1, month2, month3 } = this.state.filteredData;
+    const dataByMonth = [
+      { month: "March", data: month1 },
+      { month: "April", data: month2 },
+      { month: "May", data: month3 },
+    ];
+
+    const yScale = d3
+      .scaleBand()
+      .domain(["March", "April", "May"])
+      .range([0, height])
+      .padding(0.1);
+
+    svg
+      .selectAll(".label")
+      .data(["March", "April", "May"])
+      .join("text")
+      .attr("class", "label")
+      .attr("x", leftMargin / 2)
+      .attr("y", (d) => yScale(d) + yScale.bandwidth() / 2)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .text((d) => d)
+      .style("fill", "#000")
+      .style("font-size", "2em")
+      .style("font-weight", "bold");
+
+    const sentimentColorScale = d3
+      .scaleLinear()
+      .domain([-1, 0, 1])
+      .range(["red", "#ECECEC", "green"]);
+
+    dataByMonth.forEach(({ month, data }) => {
+      //Set of variables used for dictating spread
+      const sectionY = yScale(month) + yScale.bandwidth() / 2;
+      const minY = yScale(month);
+      const maxY = yScale(month) + yScale.bandwidth();
+
+      const sectionCenterX = (width + leftMargin) / 2;
+      const horizontalSpread = 1400;
+
+      // Force Simulation Section
+      const simulation = d3
+        .forceSimulation(data)
+        .force(
+          "x",
+          d3
+            .forceX()
+            .x(() => sectionCenterX)
+            .strength(0.03)
+        )
+        .force("y", d3.forceY().y(sectionY).strength(1.2))
+        .force("collision", d3.forceCollide().radius(14))
+        .on("tick", () => {
+          data.forEach((d) => {
+            d.x = Math.max(
+              sectionCenterX - horizontalSpread,
+              Math.min(sectionCenterX + horizontalSpread, d.x)
+            ); // Sets left and right bounds using center point +/- spread variable
+            d.y = Math.max(minY, Math.min(maxY, d.y));
+            // Sets top and bottom bounds using yscale and bandwidth respectively
+          });
+
+          // Adds circles
+          svg
+            .selectAll(`.circle-${month}`)
+            .data(data)
+            .join("circle")
+            .attr("class", `circle-${month}`)
+            .attr("r", 10)
+            .attr("fill", (d) => sentimentColorScale(d.Sentiment))
+            .attr("cx", (d) => d.x)
+            .attr("cy", (d) => d.y)
+            .attr("stroke", "none")
+            .on("click", (event, d) => this.handleCircleClick(event, d));
+        });
+
+      // Run simulation
+      for (let i = 0; i < 300; i++) simulation.tick();
     });
 
-    const stackKeys = ["GPT4", "Gemini", "PaLM2", "Claude", "LLaMA31"];
-    const customLabels = ["GPT-4", "Gemini", "PaLM-2", "Claude", "LLaMA-3.1"];
+    // Add legend to right of SVG
+    const legendWidth = 40;
+    const legendHeight = 420;
+    const legendX = width - 100;
+    const legendY = height / 2 - legendHeight / 2;
 
-    const stack = d3.stack().keys(stackKeys).offset(d3.stackOffsetWiggle);
-    const stackedSeries = stack(data);
+    const legendGroup = svg.append("g").attr("class", "legend");
 
-    const maxSum = d3.max(stackedSeries, (layer) => d3.max(layer, (d) => d[1]));
+    // Uses definition element to draw a gradient
+    const gradient = svg
+      .append("defs")
+      .append("linearGradient")
+      .attr("id", "gradient")
+      .attr("x1", "0%")
+      .attr("y1", "100%")
+      .attr("x2", "0%")
+      .attr("y2", "0%");
 
-    var xScale = d3
-      .scaleTime()
-      .domain(d3.extent(data, (d) => d.Date))
-      .range([50, 500]);
-    var yScale = d3.scaleLinear().domain([0, maxSum]).range([300, 0]);
-    var colors = ["#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00"];
+    // Stops are used to position colors on the gradient
+    gradient.append("stop").attr("offset", "0%").attr("stop-color", "red");
+    gradient.append("stop").attr("offset", "50%").attr("stop-color", "#ECECEC");
+    gradient.append("stop").attr("offset", "100%").attr("stop-color", "green");
 
-    var areaGenerator = d3
-      .area()
-      .x((d) => xScale(d.data.Date))
-      .y0((d) => yScale(d[0]))
-      .y1((d) => yScale(d[1]))
-      .curve(d3.curveCardinal);
-
-    const tooltipChart = d3.select("#tooltip-chart");
-    var color = "white";
-
-    d3.select(".container1")
-      .selectAll("path")
-      .data(stackedSeries)
-      .join("path")
-      .style("fill", (d, i) => colors[i])
-      .attr("d", (d) => areaGenerator(d))
-      .on("mouseover", (event, d) => {
-        //console.log("Mouseover", event, d);
-        tooltip.style("opacity", 1);
-
-        const key = d.key;
-        const keyIndex = stackKeys.indexOf(key);
-        const monthlyData = streamData.map((entry) => ({
-          month: d3.timeFormat("%b")(entry.Date),
-          value: entry[key],
-        }));
-
-        const barX = d3
-          .scaleBand()
-          .domain(monthlyData.map((d) => d.month))
-          .range([30, 340])
-          .padding(0.1);
-
-        const barY = d3
-          .scaleLinear()
-          .domain([0, d3.max(monthlyData, (d) => d.value)])
-          .range([200, 20]);
-
-        tooltipChart.selectAll("*").remove();
-
-        tooltipChart
-          .selectAll(".bar")
-          .data(monthlyData)
-          .join("rect")
-          .attr("class", "bar")
-          .attr("x", (d) => barX(d.month))
-          .attr("y", (d) => barY(d.value))
-          .attr("width", barX.bandwidth())
-          .attr("height", (d) => 200 - barY(d.value))
-          .style("fill", color)
-          .transition()
-          .duration(500)
-          .style("fill", colors[keyIndex]);
-
-        color = colors[keyIndex];
-
-        const xAxis = d3.axisBottom(barX);
-        tooltipChart
-          .append("g")
-          .attr("class", "x-axis")
-          .attr("transform", "translate(0, 200)")
-          .call(xAxis);
-
-        const yAxis = d3.axisLeft(barY);
-        tooltipChart
-          .append("g")
-          .attr("class", "y-axis")
-          .attr("transform", "translate(30,0)")
-          .call(yAxis);
-      })
-      .on("mousemove", (event) => {
-        tooltip
-          .style("left", event.pageX - 200 + "px")
-          .style("top", event.pageY + 10 + "px");
-      })
-      .on("mouseout", () => {
-        tooltip.style("opacity", 0);
-
-        tooltipChart
-          .selectAll(".bar")
-          .transition()
-          .duration(500)
-          .style("fill", "transparent");
-      });
-
-    d3.select(".x-axis")
-      .attr("transform", `translate(0, 370)`)
-      .call(
-        d3
-          .axisBottom(xScale)
-          .ticks(d3.timeMonth.every(1))
-          .tickFormat(d3.timeFormat("%b"))
-      );
-
-    const legend = d3
-      .select("svg")
-      .selectAll(".legend")
-      .data(customLabels)
-      .join("g")
-      .attr("class", "legend")
-      .attr("transform", (d, i) => `translate(550, ${100 + i * 25})`);
-
-    var colorsRev = ["#FF7F00", "#984EA3", "#4DAF4A", "#377EB8", "#E41A1C"];
-    legend
+    // Blocks of code that draw legend
+    // Accesses definiton element by url
+    legendGroup
       .append("rect")
-      .attr("x", 0)
-      .attr("y", 0)
-      .attr("width", 20)
-      .attr("height", 20)
-      .style("fill", (d, i) => colorsRev[i]);
+      .attr("x", legendX)
+      .attr("y", legendY)
+      .attr("width", legendWidth)
+      .attr("height", legendHeight)
+      .style("fill", "url(#gradient)");
 
-    legend
+    legendGroup
       .append("text")
-      .attr("x", 30)
-      .attr("y", 15)
-      .text((d) => d)
-      .style("font-size", "1.2em")
-      .attr("alignment-baseline", "middle");
-  }
+      .attr("id", "legend-label-top")
+      .attr("x", legendX + legendWidth / 2)
+      .attr("y", legendY - 30)
+      .attr("text-anchor", "middle")
+      .text("Positive")
+      .style("font-size", "24px")
+      .style("font-weight", "bold");
 
+    legendGroup
+      .append("text")
+      .attr("id", "legend-label-bottom")
+      .attr("x", legendX + legendWidth / 2)
+      .attr("y", legendY + legendHeight + 30)
+      .attr("text-anchor", "middle")
+      .text("Negative")
+      .style("font-size", "24px")
+      .style("font-weight", "bold");
+  };
+
+  // Function that handles dropdown menu selection
+  handleDropChange = (event) => {
+    const circleFill = event.target.value;
+    this.setState({ circleFill }, () => {
+      this.updateCircleColors();
+    });
+  };
+
+  // Function used to update visualization without rerendering
+  updateCircleColors = () => {
+    const sentimentColorScale = d3
+      .scaleLinear()
+      .domain([-1, 0, 1])
+      .range(["red", "#ECECEC", "green"]);
+
+    const subjectivityColorScale = d3
+      .scaleLinear()
+      .domain([0, 1])
+      .range(["#ECECEC", "#4467C4"]);
+
+    // Assigns chosen colorscale to a variable and uses it to update circle color
+    const colorScale =
+      this.state.circleFill === "Sentiment"
+        ? (d) => sentimentColorScale(d.Sentiment)
+        : (d) => subjectivityColorScale(d.Subjectivity);
+
+    d3.selectAll("circle").attr("fill", colorScale);
+
+    // Update legend
+    const legendLabel =
+      this.state.circleFill === "Sentiment"
+        ? ["Negative", "Positive"]
+        : ["Objective", "Subjective"];
+    const legendColors =
+      this.state.circleFill === "Sentiment"
+        ? ["red", "#ECECEC", "green"]
+        : ["#ECECEC", "#4467C4"];
+
+    const legendGroup = d3.select(".legend");
+
+    if (this.state.circleFill === "Sentiment") {
+      const gradient = d3.select("#gradient");
+      gradient.selectAll("*").remove();
+      gradient
+        .append("stop")
+        .attr("offset", "0%")
+        .attr("stop-color", legendColors[0]);
+      gradient
+        .append("stop")
+        .attr("offset", "50%")
+        .attr("stop-color", legendColors[1]);
+      gradient
+        .append("stop")
+        .attr("offset", "100%")
+        .attr("stop-color", legendColors[2]);
+    } else {
+      const gradient = d3.select("#gradient");
+      gradient.selectAll("*").remove();
+      gradient
+        .append("stop")
+        .attr("offset", "0%")
+        .attr("stop-color", legendColors[0]);
+      gradient
+        .append("stop")
+        .attr("offset", "100%")
+        .attr("stop-color", legendColors[1]);
+    }
+
+    legendGroup.select("#legend-label-top").text(legendLabel[1]);
+    legendGroup.select("#legend-label-bottom").text(legendLabel[0]);
+  };
+
+  // Function listens for clicks on circles and populates tweets array accordingly
+  handleCircleClick = (event, d) => {
+    const { tweets } = this.state;
+    const currentStroke = d3.select(event.target).attr("stroke");
+
+    if (currentStroke === "none") {
+      d3.select(event.target).attr("stroke", "black").attr("stroke-width", 4);
+      this.setState({
+        tweets: [d.RawTweet, ...tweets],
+      });
+    } else {
+      d3.select(event.target).attr("stroke", "none").attr("stroke-width", 0);
+      this.setState({
+        tweets: tweets.filter((tweet) => tweet !== d.RawTweet),
+      });
+    }
+  };
+
+  // Renders visualization and div with selected tweets
   render() {
+    const { circleFill, tweets } = this.state;
+
     return (
-      <div>
-        <svg
-          style={{ width: 700, height: 500, marginTop: 100, marginLeft: 50 }}
-        >
-          <g className="container1"></g>
-          <g className="x-axis"></g>
-        </svg>
-        <div id="tooltip">
-          <svg id="tooltip-chart" width="350" height="230"></svg>
+      <div className="upload-group">
+        {this.props.json_data.length !== 0 ? (
+          <div className="drop-group">
+            <h1>Color By:</h1>
+            <label>
+              <select value={circleFill} onChange={this.handleDropChange}>
+                <option value="Sentiment">Sentiment</option>
+                <option value="Subjectivity">Subjectivity</option>
+              </select>
+            </label>
+          </div>
+        ) : (
+          <div></div>
+        )}
+        <div id="layout" />
+        <div id="tweets">
+          <ul>
+            {tweets.map((tweet, index) => (
+              <li key={index} className="tweet-entry">
+                {tweet}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     );
   }
 }
+
 export default Comp1;
